@@ -1,0 +1,102 @@
+project:
+  name: ThinSectionSeg
+  outputs_dir: outputs/smoketest
+  seed: 42
+
+data:
+  root_dir: ./data
+  samples: ["A6", "E4", "F1"]
+  mode: separate
+  patch_size: 512
+  patch_stride: 256
+  normalize_0_1: true
+  num_workers: 0
+  batch_size: 1
+  pin_memory: false
+  persistent_workers: false
+  prefetch_factor: 2
+  preload_into_ram: false
+  stack_images_limit: null
+
+split:
+  mode: fraction
+  seed: 42
+  fractions:
+    train: 0.7
+    val: 0.15
+    test: 0.15
+  sample_holdout:
+    train_samples: []
+    val_samples: []
+    test_samples: []
+  manifest_path: ""
+  save_manifest: true
+  output_dir: outputs/splits
+
+model:
+  arch: unetpp
+  encoder: timm-efficientnet-b4
+  encoder_weights: imagenet
+  dropout: 0.0
+  in_channels: 3
+  num_classes: 5
+
+optim:
+  lr: 0.0005
+  weight_decay: 0.0001
+  ce_weight: 0.5
+  dice_weight: 0.5
+  amp: true
+  grad_clip_norm: 0.0
+
+sched:
+  type: ReduceLROnPlateau
+  patience: 6
+  factor: 0.5
+
+train:
+  max_epochs: 150
+  early_stop_patience: 10
+  log_interval: 20
+
+eval:
+  save_confusion_matrix: true
+
+augment:
+  train:
+    enabled: true
+    hflip: 0.5
+    vflip: 0.2
+    rotate90: 0.25
+    rotate: 15
+    rotate_p: 0.5
+    shift_scale_rotate:
+      shift: 0.05
+      scale: 0.1
+      rotate: 10
+      border_mode: 0
+      p: 0.35
+    elastic:
+      alpha: 25
+      sigma: 5
+      border_mode: 0
+      p: 0.2
+    color_jitter:
+      brightness: 0.15
+      contrast: 0.15
+      saturation: 0.1
+      hue: 0.05
+      p: 0.3
+
+smoketest:
+  enabled: true
+  max_train_patches: 64
+  max_val_patches: 32
+  num_workers: 0
+  batches_per_epoch: 1
+
+inference:
+  checkpoint_path: models/best.ckpt
+  patches_dir: patches
+  num_examples: 8
+  save_dir: outputs/inference

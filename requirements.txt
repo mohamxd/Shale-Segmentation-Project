@@ -1,0 +1,9 @@
+albumentations
+matplotlib
+numpy
+pyyaml
+scikit-learn
+segmentation-models-pytorch
+tifffile
+timm
+torch
