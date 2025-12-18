@@ -1,6 +1,7 @@
 # Shale Segmentation Code
 
 This repo provides a reproducible deep-learning workflow for semantic segmentation of thin-section mineral imagery.
+For detailed steps of how to prepare dataset and run the code refer to guide.pdf in this repository
 
 ## Installation
 ```bash
