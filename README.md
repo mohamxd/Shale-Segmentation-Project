@@ -28,7 +28,7 @@ Patches exported for inference should follow the late-fusion naming convention (
 All pipeline settings are defined in `config.yaml`:
 - `project`: experiment name, output directory, random seed.
 - `data`: dataset root, sample list, loader mode (`stack` or `separate`), patch size and stride, normalization, worker settings, and optional preloading.
-- `split`: split mode (`fraction`, `sample_holdout`, or `fixed_manifest`), fractions or holdout lists, manifest path, and manifest output directory.
+- `split`: split mode (`sample_holdout` or `region_split`), fractions or holdout lists, manifest path, and manifest output directory plus region planning options.
 - `model`: architecture, encoder backbone, encoder weights, dropout, input channels, and number of classes.
 - `optim` and `sched`: optimizer hyperparameters, loss weighting, AMP toggle, gradient clipping, and scheduler choice.
 - `train`: epoch count, early stopping patience, and logging interval.
@@ -36,6 +36,13 @@ All pipeline settings are defined in `config.yaml`:
 - `augment`: Albumentations options for training patches.
 - `smoketest`: limits for dataset size, workers, and batches per epoch for quick runs.
 - `inference`: checkpoint path, patch directory, number of examples, and output directory for predictions.
+
+## Data splits
+- Two split modes are supported: `sample_holdout` (unchanged behavior) and `region_split`.
+- `region_split` plans a grid (rows x columns) per sample automatically within configured bounds, or uses an explicit `region_grid` override.
+- The effective canvas can be padded or cropped (`eff_mode`) to align grid and stride; padding uses background for labels.
+- Patch coordinates are taken from the stride grid, keeping patches whose centers land inside a region; `strict_no_pixel_leakage` additionally requires full containment to avoid cross-region pixels.
+- Region assignments occur at the region level using deterministic shuffles and requested fractions, ensuring region IDs are angle-agnostic to prevent leakage across views.
 
 ## Training
 Run full training with the specified configuration:
