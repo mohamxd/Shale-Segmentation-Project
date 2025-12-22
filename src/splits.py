@@ -26,6 +26,15 @@ class SplitConfig:
     mode: str
     seed: int
     fractions: SplitFractions
+    strict_no_pixel_leakage: bool
+    eff_mode: str
+    max_regions: int
+    min_total_regions: int
+    max_total_regions: int
+    max_r: int
+    max_c: int
+    min_val_test_regions_each: int
+    region_grid: Dict[str, int]
     sample_holdout: SplitHoldout
     manifest_path: str
     save_manifest: bool
@@ -35,14 +44,26 @@ class SplitConfig:
     def from_dict(cls, cfg: Dict[str, Any]) -> "SplitConfig":
         fractions = cfg.get("fractions", {})
         holdout = cfg.get("sample_holdout", {})
+        region_grid = cfg.get("region_grid") or {}
         return cls(
-            mode=cfg.get("mode", "fraction"),
+            mode=cfg.get("mode", "sample_holdout"),
             seed=int(cfg.get("seed", 42)),
             fractions=SplitFractions(
                 train=float(fractions.get("train", 0.7)),
                 val=float(fractions.get("val", 0.15)),
                 test=float(fractions.get("test", 0.15)),
             ),
+            strict_no_pixel_leakage=bool(cfg.get("strict_no_pixel_leakage", False)),
+            eff_mode=str(cfg.get("eff_mode", "pad")),
+            max_regions=int(cfg.get("max_regions", 80)),
+            min_total_regions=int(cfg.get("min_total_regions", 1)),
+            max_total_regions=int(cfg.get("max_total_regions", cfg.get("max_regions", 80))),
+            max_r=int(cfg.get("max_r", 12)),
+            max_c=int(cfg.get("max_c", 20)),
+            min_val_test_regions_each=int(cfg.get("min_val_test_regions_each", 1)),
+            region_grid={"rr": int(region_grid.get("rr", 0)), "cc": int(region_grid.get("cc", 0))}
+            if region_grid
+            else {},
             sample_holdout=SplitHoldout(
                 train_samples=list(holdout.get("train_samples", [])),
                 val_samples=list(holdout.get("val_samples", [])),
@@ -61,9 +82,6 @@ class SplitManager:
         self.manifest_path: Path | None = None
 
     def generate_manifest(self, dataset_index: Sequence[Dict[str, Any]]) -> Dict[str, str]:
-        if self.config.mode == "fixed_manifest":
-            raise ValueError("Use load_manifest for fixed manifests.")
-
         by_region: Dict[str, List[Dict[str, Any]]] = {}
         for entry in dataset_index:
             region_id = entry["region_id"]
@@ -73,6 +91,9 @@ class SplitManager:
             self.manifest = self._manifest_sample_holdout(dataset_index)
             return self.manifest
 
+        if self.config.mode != "region_split":
+            raise ValueError(f"Unsupported split mode: {self.config.mode}")
+
         region_to_split: Dict[str, str] = {}
         by_sample: Dict[str, List[str]] = {}
         for region in by_region:
@@ -80,7 +101,15 @@ class SplitManager:
             by_sample.setdefault(sample, []).append(region)
 
         for sample, regions in by_sample.items():
-            assigned = self._assign_regions_by_fraction(sample, regions)
+            rr = by_region[regions[0]][0].get("grid_rr")
+            cc = by_region[regions[0]][0].get("grid_cc")
+            assigned = self._assign_regions_by_fraction(
+                sample_name=sample,
+                regions=regions,
+                rr=rr,
+                cc=cc,
+                min_val_test_regions_each=self.config.min_val_test_regions_each,
+            )
             region_to_split.update(assigned)
 
         manifest: Dict[str, str] = {}
@@ -108,7 +137,14 @@ class SplitManager:
             manifest[entry["patch_id"]] = split
         return manifest
 
-    def _assign_regions_by_fraction(self, sample_name: str, regions: Iterable[str]) -> Dict[str, str]:
+    def _assign_regions_by_fraction(
+        self,
+        sample_name: str,
+        regions: Iterable[str],
+        rr: int | None = None,
+        cc: int | None = None,
+        min_val_test_regions_each: int = 1,
+    ) -> Dict[str, str]:
         region_list = list(regions)
         rng = random.Random(hash((sample_name, self.config.seed)) & 0xFFFFFFFF)
         rng.shuffle(region_list)
@@ -127,27 +163,32 @@ class SplitManager:
         for i in range(remainder):
             counts[parts[i][1]] += 1
 
-        if n >= 3:
-            if counts["val"] == 0:
-                counts["val"] = 1
-                counts["train"] = max(0, counts["train"] - 1)
-            if counts["test"] == 0:
-                counts["test"] = 1
-                counts["train"] = max(0, counts["train"] - 1)
+        if n >= 1 + 2 * min_val_test_regions_each:
+            if counts["val"] < min_val_test_regions_each:
+                needed = min_val_test_regions_each - counts["val"]
+                counts["val"] += needed
+                counts["train"] -= needed
+            if counts["test"] < min_val_test_regions_each:
+                needed = min_val_test_regions_each - counts["test"]
+                counts["test"] += needed
+                counts["train"] -= needed
+            if counts["train"] < 0:
+                counts = {"train": n, "val": 0, "test": 0}
 
         manifest: Dict[str, str] = {}
         idx = 0
         for _ in range(counts["train"]):
-            manifest[region_list[idx]] = "train"
+            if idx < len(region_list):
+                manifest[region_list[idx]] = "train"
             idx += 1
         for _ in range(counts["val"]):
             if idx < len(region_list):
                 manifest[region_list[idx]] = "val"
-                idx += 1
+            idx += 1
         for _ in range(counts["test"]):
             if idx < len(region_list):
                 manifest[region_list[idx]] = "test"
-                idx += 1
+            idx += 1
         while idx < len(region_list):
             manifest[region_list[idx]] = "train"
             idx += 1
