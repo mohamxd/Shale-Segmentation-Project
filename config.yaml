@@ -19,12 +19,21 @@ data:
   stack_images_limit: null
 
 split:
-  mode: fraction
+  mode: region_split
   seed: 42
   fractions:
     train: 0.7
     val: 0.15
     test: 0.15
+  strict_no_pixel_leakage: true
+  eff_mode: pad
+  max_regions: 80
+  min_total_regions: 12
+  max_total_regions: 16
+  max_r: 12
+  max_c: 20
+  min_val_test_regions_each: 1
+  region_grid: {}
   sample_holdout:
     train_samples: []
     val_samples: []
